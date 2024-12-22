@@ -7,75 +7,112 @@ class DatabaseHelper {
 
   DatabaseHelper._init();
 
-  // Singleton Instance
-  factory DatabaseHelper() => instance;
-
-  // Get Database Instance
   Future<Database> get database async {
     if (_database != null) return _database!;
-    _database = await _initDB('sewa_buku.db');
+    _database = await _initDB('train_ticket.db');
     return _database!;
   }
 
-  // Initialize Database
   Future<Database> _initDB(String filePath) async {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, filePath);
 
-    return await openDatabase(
-      path,
-      version: 1,
-      onCreate: _createDB,
-    );
+    return await openDatabase(path, version: 1, onCreate: _createDB);
   }
 
-  // Create Table
   Future _createDB(Database db, int version) async {
+    // Tabel stasiun
     await db.execute('''
-      CREATE TABLE sewa_buku (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nama TEXT NOT NULL,
-        alamat TEXT NOT NULL,
-        nama_buku Text NOT NULL,
-        tanggal_sewa TEXT NOT NULL,
-        tanggal_kembali TEXT NOT NULL,
-        total_bayar INTEGER NOT NULL
-      )
-    ''');
-  }
-
-  // Add Data
-  Future<int> addSewa(Map<String, dynamic> data) async {
-    final db = await instance.database;
-    return await db.insert('sewa_buku', data);
-  }
-
-  // Get All Data (Ordered by ID Ascending)
-  Future<List<Map<String, dynamic>>> getAllSewa() async {
-    final db = await instance.database;
-    return await db.query('sewa_buku', orderBy: 'id ASC');
-  }
-
-  // Update Data
-  Future<int> updateSewa(Map<String, dynamic> data) async {
-    final db = await instance.database;
-    return await db.update(
-      'sewa_buku',
-      data,
-      where: 'id = ?',
-      whereArgs: [data['id']],
+    CREATE TABLE stations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL
     );
+    ''');
+
+    // Tabel rute
+    await db.execute('''
+    CREATE TABLE routes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_station_id INTEGER,
+      to_station_id INTEGER,
+      price INTEGER,
+      FOREIGN KEY (from_station_id) REFERENCES stations (id),
+      FOREIGN KEY (to_station_id) REFERENCES stations (id)
+    );
+    ''');
+
+    // Tabel tiket
+    await db.execute('''
+    CREATE TABLE tickets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      customer_name TEXT NOT NULL,
+      from_station TEXT NOT NULL,
+      to_station TEXT NOT NULL,
+      booking_date TEXT NOT NULL,
+      price INTEGER NOT NULL
+    );
+    ''');
+
+    // Data awal stasiun
+    await db.insert('stations', {'name': 'Jakarta'});
+    await db.insert('stations', {'name': 'Bandung'});
+    await db.insert('stations', {'name': 'Cirebon'});
+
+    // Data awal rute
+    await db.insert('routes', {
+      'from_station_id': 1,
+      'to_station_id': 2,
+      'price': 250000
+    });
+    await db.insert('routes', {
+      'from_station_id': 1,
+      'to_station_id': 3,
+      'price': 150000
+    });
+    await db.insert('routes', {
+      'from_station_id': 2,
+      'to_station_id': 1,
+      'price': 200000
+    });
+    await db.insert('routes', {
+      'from_station_id': 3,
+      'to_station_id': 1,
+      'price': 125000
+    });
   }
 
-  // Delete Data
-  Future<int> deleteSewa(int id) async {
-    final db = await instance.database;
-    return await db.delete('sewa_buku', where: 'id = ?', whereArgs: [id]);
+  Future<List<Map<String, dynamic>>> fetchTickets() async {
+    final db = await database;
+    return await db.query('tickets');
   }
 
-  Future<void> vacuumDatabase() async {
-    final db = await instance.database;
-    await db.execute('VACUUM');
-    print("Database telah dioptimalkan dengan VACUUM.");
+  Future<List<Map<String, dynamic>>> fetchRoutes() async {
+    final db = await database;
+    final routes = await db.rawQuery('''
+      SELECT 
+        r.id, 
+        s1.name AS from_station, 
+        s2.name AS to_station, 
+        r.price
+      FROM routes r
+      JOIN stations s1 ON r.from_station_id = s1.id
+      JOIN stations s2 ON r.to_station_id = s2.id
+    ''');
+    return routes;
+  }
+
+  Future<void> insertTicket(Map<String, dynamic> ticket) async {
+    final db = await database;
+    await db.insert('tickets', ticket);
+  }
+
+  Future<void> updateTicket(int id, Map<String, dynamic> ticket) async {
+    final db = await database;
+    await db.update('tickets', ticket, where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> deleteTicket(int id) async {
+    final db = await database;
+    await db.delete('tickets', where: 'id = ?', whereArgs: [id]);
   }
 }

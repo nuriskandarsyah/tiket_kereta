@@ -1,276 +1,217 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'db/db_helper.dart';
 
-void main() {
-  runApp(MyApp());
-}
-
-class MyApp extends StatelessWidget {
+class TicketBookingPage extends StatefulWidget {
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: SewaBukuPage(),
-    );
-  }
+  _TicketBookingPageState createState() => _TicketBookingPageState();
 }
 
-class SewaBukuPage extends StatefulWidget {
-  @override
-  _SewaBukuPageState createState() => _SewaBukuPageState();
-}
-
-class _SewaBukuPageState extends State<SewaBukuPage> {
-  final dbHelper = DatabaseHelper.instance;
-
-  final _namaController = TextEditingController();
-  final _alamatController = TextEditingController();
-  final _namaBukuController = TextEditingController();
-  final _tanggalSewaController = TextEditingController();
-  final _tanggalKembaliController = TextEditingController();
-
-  final int _hargaPerHari = 10000;
-
-  List<Map<String, dynamic>> _notes = [];
-  Map<String, dynamic>? _selectedItem;
+class _TicketBookingPageState extends State<TicketBookingPage> {
+  List<Map<String, dynamic>> _tickets = [];
+  List<Map<String, dynamic>> _routes = [];
+  final _formKey = GlobalKey<FormState>();
+  String _customerName = '';
+  String _bookingDate = '';
+  Map<String, dynamic>? _selectedRoute;
 
   @override
   void initState() {
     super.initState();
-    _loadNotes();
+    _fetchTickets();
+    _fetchRoutes();
   }
 
-  _loadNotes() async {
-    final notes = await dbHelper.getAllSewa();
+  Future<void> _fetchTickets() async {
+    final tickets = await DatabaseHelper.instance.fetchTickets();
     setState(() {
-      _notes = notes;
+      _tickets = tickets;
     });
   }
 
-  Future<void> _saveData() async {
-    if (_namaController.text.isEmpty ||
-        _alamatController.text.isEmpty ||
-        _namaBukuController.text.isEmpty ||
-        _tanggalSewaController.text.isEmpty ||
-        _tanggalKembaliController.text.isEmpty) {
-      _showSnackbar("Harap isi semua kolom!");
-      return;
-    }
-
-    final tanggalSewa = DateTime.parse(_tanggalSewaController.text);
-    final tanggalKembali = DateTime.parse(_tanggalKembaliController.text);
-
-    if (tanggalKembali.isBefore(tanggalSewa)) {
-      _showSnackbar("Tanggal Kembali harus setelah Tanggal Sewa!");
-      return;
-    }
-
-    int lamaSewa = tanggalKembali.difference(tanggalSewa).inDays;
-    lamaSewa = lamaSewa == 0 ? 1 : lamaSewa;
-    print("lama Sewa: $lamaSewa hari");
-    final totalBayar = lamaSewa * _hargaPerHari;
-
-    if (_selectedItem == null) {
-      // Tambah Data Baru
-      await dbHelper.addSewa({
-        'nama': _namaController.text,
-        'alamat': _alamatController.text,
-        'nama_buku': _namaBukuController.text,
-        'tanggal_sewa': _tanggalSewaController.text,
-        'tanggal_kembali': _tanggalKembaliController.text,
-        'total_bayar': totalBayar,
-      });
-    } else {
-      // Edit Data
-      await dbHelper.updateSewa({
-        'id': _selectedItem!['id'],
-        'nama': _namaController.text,
-        'alamat': _alamatController.text,
-        'nama_buku': _namaBukuController.text,
-        'tanggal_sewa': _tanggalSewaController.text,
-        'tanggal_kembali': _tanggalKembaliController.text,
-        'total_bayar': totalBayar,
-      });
-      _selectedItem = null;
-    }
-
-    _clearInput();
-    _loadNotes();
-    _showSnackbar("Data berhasil disimpan!");
+  Future<void> _fetchRoutes() async {
+    final routes = await DatabaseHelper.instance.fetchRoutes();
+    setState(() {
+      _routes = routes;
+    });
   }
 
-  void _clearInput() {
-    _namaController.clear();
-    _alamatController.clear();
-    _namaBukuController.clear();
-    _tanggalSewaController.clear();
-    _tanggalKembaliController.clear();
-    _selectedItem = null;
+  Future<void> _saveTicket({int? ticketId}) async {
+    if (_formKey.currentState!.validate() && _selectedRoute != null) {
+      _formKey.currentState!.save();
+      final ticket = {
+        'customer_name': _customerName,
+        'from_station': _selectedRoute!['from_station'],
+        'to_station': _selectedRoute!['to_station'],
+        'booking_date': _bookingDate,
+        'price': _selectedRoute!['price'],
+      };
+      if (ticketId == null) {
+        await DatabaseHelper.instance.insertTicket(ticket);
+      } else {
+        await DatabaseHelper.instance.updateTicket(ticketId, ticket);
+      }
+      Navigator.of(context).pop();
+      _fetchTickets();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(
+                'Ticket ${ticketId == null ? 'added' : 'updated'} successfully!')),
+      );
+    }
   }
 
-  void _showSnackbar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(message),
-      duration: Duration(seconds: 2),
-    ));
-  }
-
-  Widget _buildTextField(TextEditingController controller, String label) {
-    return TextField(
-      controller: controller,
-      decoration: InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(),
-      ),
+  Future<void> _deleteTicket(int id) async {
+    await DatabaseHelper.instance.deleteTicket(id);
+    _fetchTickets();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Ticket deleted successfully!')),
     );
   }
 
-  Widget _buildDatePicker(TextEditingController controller, String label) {
-    return TextField(
-      controller: controller,
-      readOnly: true,
-      decoration: InputDecoration(
-        labelText: label,
-        border: OutlineInputBorder(),
-      ),
-      onTap: () async {
-        DateTime? pickedDate = await showDatePicker(
-          context: context,
-          initialDate: DateTime.now(),
-          firstDate: DateTime(2000),
-          lastDate: DateTime(2101),
+  void _showTicketDialog({Map<String, dynamic>? ticket}) {
+    setState(() {
+      if (ticket != null) {
+        _customerName = ticket['customer_name'];
+        _bookingDate = ticket['booking_date'];
+        _selectedRoute = _routes.firstWhere(
+          (route) =>
+              route['from_station'] == ticket['from_station'] &&
+              route['to_station'] == ticket['to_station'],
+          orElse: () => {},
         );
-        if (pickedDate != null) {
-          setState(() {
-            controller.text = DateFormat('yyyy-MM-dd').format(pickedDate);
-          });
-        }
-      },
-    );
-  }
-
-  void _editData(Map<String, dynamic> item) {
-    setState(() {
-      _selectedItem = item;
-      _namaController.text = item['nama'];
-      _alamatController.text = item['alamat'];
-      _namaBukuController.text = item['nama_buku'];
-      _tanggalSewaController.text = item['tanggal_sewa'];
-      _tanggalKembaliController.text = item['tanggal_kembali'];
+      } else {
+        _customerName = '';
+        _bookingDate = '';
+        _selectedRoute = null;
+      }
     });
-  }
 
-  void _deleteData(int id) async {
     showDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text('Hapus data'),
-          content: Text('Apakah Anda yakin ingin menghapus data ini?'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: Text('Batal'),
-            ),
-            TextButton(
-              onPressed: () async {
-                await dbHelper.deleteSewa(id);
-                _loadNotes();
-                Navigator.of(context).pop();
-                _showSnackbar("Data berhasil dihapus!");
-              },
-              child: Text('Hapus'),
-            ),
-          ],
-        );
-      },
+      builder: (context) => AlertDialog(
+        title: Text(ticket == null ? 'Add Ticket' : 'Edit Ticket'),
+        content: Form(
+          key: _formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              DropdownButtonFormField<Map<String, dynamic>>(
+                items: _routes.isNotEmpty
+                    ? _routes
+                        .map((route) => DropdownMenuItem(
+                              value: route,
+                              child: Text(
+                                '${route['from_station']} → ${route['to_station']} (Rp ${route['price']})',
+                              ),
+                            ))
+                        .toList()
+                    : [],
+                value: _selectedRoute,
+                onChanged: (value) {
+                  setState(() {
+                    _selectedRoute = value;
+                  });
+                },
+                decoration: InputDecoration(
+                  labelText: 'Select Route',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) =>
+                    value == null ? 'Please select a route' : null,
+              ),
+              SizedBox(height: 16),
+              TextFormField(
+                initialValue: _customerName,
+                decoration: InputDecoration(
+                  labelText: 'Customer Name',
+                  border: OutlineInputBorder(),
+                ),
+                onSaved: (value) {
+                  _customerName = value!;
+                },
+                validator: (value) =>
+                    value!.isEmpty ? 'Please enter customer name' : null,
+              ),
+              SizedBox(height: 16),
+              TextFormField(
+                initialValue: _bookingDate,
+                decoration: InputDecoration(
+                  labelText: 'Booking Date',
+                  hintText: 'YYYY-MM-DD',
+                  border: OutlineInputBorder(),
+                ),
+                onSaved: (value) {
+                  _bookingDate = value!;
+                },
+                validator: (value) {
+                  final dateRegex = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+                  if (value == null || value.isEmpty) {
+                    return 'Please enter booking date';
+                  } else if (!dateRegex.hasMatch(value)) {
+                    return 'Enter date in YYYY-MM-DD format';
+                  }
+                  return null;
+                },
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () =>
+                _saveTicket(ticketId: ticket == null ? null : ticket['id']),
+            child: Text(ticket == null ? 'Add' : 'Save'),
+          ),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 66, 31, 18),
-        title: Text(
-          'Sewa Buku',
-          style: TextStyle(color: Colors.white),
-        ),
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Form Input di Atas
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
+      appBar: AppBar(title: Text('Train Tickets')),
+      body: ListView.builder(
+        itemCount: _tickets.length,
+        itemBuilder: (context, index) {
+          final ticket = _tickets[index];
+          return Card(
+            margin: EdgeInsets.all(8.0),
+            child: ListTile(
+              title:
+                  Text('${ticket['from_station']} → ${ticket['to_station']}'),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildTextField(_namaController, 'Nama'),
-                  SizedBox(height: 10),
-                  _buildTextField(_alamatController, 'Alamat'),
-                  SizedBox(height: 10),
-                  _buildTextField(_namaBukuController, 'Nama Buku'),
-                  SizedBox(height: 10),
-                  _buildDatePicker(_tanggalSewaController, 'Tanggal Sewa'),
-                  SizedBox(height: 10),
-                  _buildDatePicker(
-                      _tanggalKembaliController, 'Tanggal Pengembalian'),
-                  SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: _saveData,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color.fromARGB(255, 66, 31, 18),
-                    ),
-                    child: Text(
-                      'Submit',
-                      style: TextStyle(color: Colors.white),
-                    ),
+                  Text('Customer: ${ticket['customer_name']}'),
+                  Text('Date: ${ticket['booking_date']}'),
+                  Text('Price: Rp ${ticket['price']}'),
+                ],
+              ),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: Icon(Icons.edit, color: Colors.blue),
+                    onPressed: () => _showTicketDialog(ticket: ticket),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.delete, color: Colors.red),
+                    onPressed: () => _deleteTicket(ticket['id']),
                   ),
                 ],
               ),
             ),
-            Divider(),
-            // List Data di Bawah
-            ListView.builder(
-              shrinkWrap: true,
-              physics: NeverScrollableScrollPhysics(),
-              itemCount: _notes.length,
-              itemBuilder: (context, index) {
-                final item = _notes[index];
-                return ListTile(
-                  title: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start, // Rata kiri
-                    mainAxisSize:
-                        MainAxisSize.min, // Menghindari ruang kosong ekstra
-                    children: [
-                      Text(
-                        item['nama'],
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        item['nama_buku'],
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                  subtitle: Text("Total Bayar: Rp ${item['total_bayar']}"),
-                  onTap: () => _editData(item),
-                  onLongPress: () => _deleteData(item['id']),
-                );
-              },
-            ),
-          ],
-        ),
+          );
+        },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () => _showTicketDialog(),
+        child: Icon(Icons.add),
       ),
     );
   }
